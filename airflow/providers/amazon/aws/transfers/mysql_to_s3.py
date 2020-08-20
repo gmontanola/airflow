@@ -63,22 +63,27 @@ class MySQLToS3Operator(BaseOperator):
     :type header: bool
     """
 
-    template_fields = ('s3_key', 'query',)
-    template_ext = ('.sql',)
+    template_fields = (
+        "s3_key",
+        "query",
+    )
+    template_ext = (".sql",)
 
     @apply_defaults
     def __init__(
-            self, *,
-            query: str,
-            s3_bucket: str,
-            s3_key: str,
-            mysql_conn_id: str = 'mysql_default',
-            aws_conn_id: str = 'aws_default',
-            verify: Optional[Union[bool, str]] = None,
-            pd_csv_kwargs: Optional[dict] = None,
-            index: Optional[bool] = False,
-            header: Optional[bool] = False,
-            **kwargs) -> None:
+        self,
+        *,
+        query: str,
+        s3_bucket: str,
+        s3_key: str,
+        mysql_conn_id: str = "mysql_default",
+        aws_conn_id: str = "aws_default",
+        verify: Optional[Union[bool, str]] = None,
+        pd_csv_kwargs: Optional[dict] = None,
+        index: Optional[bool] = False,
+        header: Optional[bool] = False,
+        **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self.query = query
         self.s3_bucket = s3_bucket
@@ -89,7 +94,7 @@ class MySQLToS3Operator(BaseOperator):
 
         self.pd_csv_kwargs = pd_csv_kwargs or {}
         if "path_or_buf" in self.pd_csv_kwargs:
-            raise AirflowException('The argument path_or_buf is not allowed, please remove it')
+            raise AirflowException("The argument path_or_buf is not allowed, please remove it")
         if "index" not in self.pd_csv_kwargs:
             self.pd_csv_kwargs["index"] = index
         if "header" not in self.pd_csv_kwargs:
@@ -105,7 +110,8 @@ class MySQLToS3Operator(BaseOperator):
                 notna_series = df[col].dropna().values
                 if np.isclose(notna_series, notna_series.astype(int)).all():
                     # set to dtype that retains integers and supports NaNs
-                    df[col] = np.where(df[col].isnull(), None, df[col]).astype(pd.Int64Dtype)
+                    df[col] = np.where(df[col].isnull(), None, df[col])
+                    df[col] = df[col].astype(pd.Int64Dtype())
 
     def execute(self, context):
         mysql_hook = MySqlHook(mysql_conn_id=self.mysql_conn_id)
@@ -114,11 +120,9 @@ class MySQLToS3Operator(BaseOperator):
         self.log.info("Data from MySQL obtained")
 
         self._fix_int_dtypes(data_df)
-        with NamedTemporaryFile(mode='r+', suffix='.csv') as tmp_csv:
+        with NamedTemporaryFile(mode="r+", suffix=".csv") as tmp_csv:
             data_df.to_csv(tmp_csv.name, **self.pd_csv_kwargs)
-            s3_conn.load_file(filename=tmp_csv.name,
-                              key=self.s3_key,
-                              bucket_name=self.s3_bucket)
+            s3_conn.load_file(filename=tmp_csv.name, key=self.s3_key, bucket_name=self.s3_bucket)
 
         if s3_conn.check_for_key(self.s3_key, bucket_name=self.s3_bucket):
             file_location = os.path.join(self.s3_bucket, self.s3_key)
